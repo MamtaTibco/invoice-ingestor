@@ -1,0 +1,245 @@
+issuetype,summary,status,description,issueid,parent,externalid
+Epic,Invoice-Ingestor Service Implementation,To Do,"This epic covers the development of the 'Invoice-Ingestor' microservice, which replaces the TIBCO process 'Invoice_To_IP_TimerProcess.process'. The service is responsible for polling the Bamboorose SOAP API on a schedule, fetching batches of commercial invoices, and publishing each invoice as a raw XML message to a Kafka topic for downstream processing. The implementation must be resilient, observable, and adhere to all x35 standards.",1,,II-1
+Story,Project Scaffolding and Dependency Setup,To Do,"As a Developer, I want to set up the basic project structure and define all necessary dependencies so that I have a clean and standardized starting point for development.
+
+- Create a standard Python project structure (e.g., 'src/', 'tests/').
+- Initialize a 'pyproject.toml' file.
+- Add all required x35 core libraries ('x35-fastapi', 'x35-settings', 'x35-json-logging', 'urbn-confluent-methods', 'x35-errors').
+- Add all required external libraries ('httpx', 'lxml', 'backoff', 'pydantic').
+
+Acceptance Criteria:
+- GIVEN the project is checked out WHEN I run 'pip install' THEN all specified project dependencies are installed successfully.
+- GIVEN the project structure is created WHEN I inspect the repository THEN it follows the standard layout for x35 services.
+
+Testing Requirements:
+- Unit Tests: N/A
+- Integration Tests: N/A
+- Edge Cases: N/A
+
+Refer:
+- SDD Section 6: Technical Stack & Libraries
+
+Dependencies:
+- None",2,1,II-2
+Story,Implement Configuration Management with x35-settings,To Do,"As a Developer, I want to implement the configuration model using 'x35-settings' to load and validate all environment variables so that the service is configured safely and reliably.
+
+- Create a Pydantic settings class that defines all environment variables listed in the SDD (LOG_LEVEL, BAMBOOROSE_*, KAFKA_*).
+- Ensure secret values are handled correctly (e.g., using Pydantic's SecretStr).
+- The application should load these settings on startup.
+
+Acceptance Criteria:
+- GIVEN all required environment variables are set correctly WHEN the service starts THEN it initializes without any configuration errors.
+- GIVEN a required environment variable (e.g., 'BAMBOOROSE_API_URL') is missing WHEN the service starts THEN it fails fast with a clear Pydantic validation error.
+- GIVEN an environment variable has an invalid type (e.g., 'BAMBOOROSE_API_TIMEOUT' is not an integer) WHEN the service starts THEN it fails with a validation error.
+
+Testing Requirements:
+- Unit Tests: Test the Pydantic settings model with valid, invalid, and missing data to ensure validation works as expected.
+- Integration Tests: N/A
+- Edge Cases: Test with empty strings for required variables.
+
+Refer:
+- SDD Section 7: Configuration
+
+Dependencies:
+- II-2: Project Scaffolding and Dependency Setup",3,1,II-3
+Story,Implement Main Application Logic and Scheduled Entrypoint,To Do,"As a Developer, I want to create the main application entrypoint and high-level process flow so that the service has a clear structure for orchestrating its tasks.
+
+- Use 'x35-fastapi' to structure the application.
+- Create a main function or class that will be triggered by the external Cloud Scheduler.
+- This function will orchestrate the sequence of operations: fetch, parse, and publish.
+- Implement the specific logic to check if the API response is empty or indicates 'No records found' and log this as a normal event.
+
+Acceptance Criteria:
+- GIVEN the service is triggered WHEN the main function is executed THEN it calls the API client, parser, and publisher in the correct sequence.
+- GIVEN the service is triggered AND the API client returns an empty/no-records response WHEN the main logic runs THEN it logs an INFO message and terminates the run gracefully without calling the publisher.
+
+Testing Requirements:
+- Unit Tests: Test the main orchestration logic using mocks for the client, parser, and publisher to verify the correct sequence of calls.
+- Integration Tests: N/A
+- Edge Cases: N/A
+
+Refer:
+- SDD Section 3.1: Process Steps
+
+Dependencies:
+- II-3: Implement Configuration Management with x35-settings",4,1,II-4
+Story,Implement SOAP Client for Bamboorose API (Happy Path),To Do,"As a Developer, I want to create a client to communicate with the Bamboorose SOAP API so that I can fetch invoice data.
+
+- Use 'httpx' to create an asynchronous HTTP client.
+- Implement logic to construct the correct SOAP XML request body for the 'getCommercialInvoicesByAvailableTimestamp' operation, populating username and password from settings.
+- The client must handle Basic Authentication.
+- Implement a method that, on success, returns the SOAP response body.
+
+Acceptance Criteria:
+- GIVEN a valid set of credentials and a timestamp WHEN the client calls the API THEN it sends a correctly formatted POST request with the specified SOAPAction header.
+- GIVEN the API returns a 200 OK response WHEN the client receives the response THEN it successfully returns the body of the response for further processing.
+
+Testing Requirements:
+- Unit Tests: Test the SOAP request body construction. Mock the 'httpx' client to test successful response handling.
+- Integration Tests: Perform a connectivity test against a mock or staging Bamboorose endpoint.
+- Edge Cases: N/A
+
+Refer:
+- SDD Section 4: API Specification
+
+Dependencies:
+- II-3: Implement Configuration Management with x35-settings",5,1,II-5
+Story,Add Resilience Patterns to the SOAP Client,To Do,"As a Developer, I want to make the SOAP API client resilient to transient failures so that the service can handle temporary network or API issues gracefully.
+
+- Use the 'backoff' library to decorate the API call method.
+- Configure the backoff for up to 5 retries with an exponential delay.
+- The retry should be triggered by connection errors, timeouts, or 5xx HTTP status codes.
+- Implement the request timeout based on the 'BAMBOOROSE_API_TIMEOUT' setting.
+- If all retries fail, a critical error must be logged and an exception raised.
+
+Acceptance Criteria:
+- GIVEN the Bamboorose API returns a 503 Service Unavailable error WHEN the client makes a call THEN it retries the call up to 5 times.
+- GIVEN the API does not respond within the configured timeout WHEN the client makes a call THEN a TimeoutException is raised and the retry logic is triggered.
+- GIVEN the API call fails after all 5 retries WHEN the process runs THEN a CRITICAL severity log is written and the service terminates its run.
+
+Testing Requirements:
+- Unit Tests: Mock the 'httpx' client to simulate 5xx responses, connection errors, and timeouts to verify that the backoff and retry logic is triggered correctly.
+- Integration Tests: N/A
+- Edge Cases: Test that 4xx client errors (e.g., 401 Unauthorized) do not trigger a retry.
+
+Refer:
+- SDD Section 8.1: System Errors (Bamboorose API Unavailability)
+- SDD Section 8.3: Resilience Patterns (Retry, Timeout)
+
+Dependencies:
+- II-5: Implement SOAP Client for Bamboorose API (Happy Path)",6,1,II-6
+Story,Implement XML Response Parsing Logic,To Do,"As a Developer, I want to parse the batch XML response from the Bamboorose API so that I can extract individual invoice records.
+
+- Use the 'lxml' library for efficient XML parsing.
+- The logic must first extract the XML document string from within the CDATA block of the SOAP response.
+- It must then parse this inner XML and iterate through the document to identify and extract each individual invoice element.
+- The function should return a list of raw XML strings, where each string is a complete single invoice record.
+
+Acceptance Criteria:
+- GIVEN a valid SOAP response with multiple invoice records WHEN the parsing logic is executed THEN a list containing the raw XML string for each invoice is returned.
+- GIVEN the XML within the CDATA section is malformed WHEN the parsing logic is executed THEN an XML parsing exception is raised.
+- GIVEN the API response is not a valid SOAP/XML structure WHEN parsing is attempted THEN an appropriate error is logged and an exception is raised.
+
+Testing Requirements:
+- Unit Tests: Test with valid multi-invoice and single-invoice payloads. Test with malformed XML to ensure exceptions are thrown correctly.
+- Integration Tests: N/A
+- Edge Cases: Test with an empty response body or a response with an empty CDATA block.
+
+Refer:
+- SDD Section 3.1: Process Steps (Parse and Iterate)
+- SDD Section 8.2: Data Errors (Invalid SOAP Response)
+
+Dependencies:
+- II-4: Implement Main Application Logic and Scheduled Entrypoint",7,1,II-7
+Story,Implement Kafka Producer Client Setup,To Do,"As a Developer, I want to establish a connection to Kafka and set up a producer client so that the service is ready to publish messages.
+
+- Use 'urbn-confluent-methods' to create and configure the Kafka producer.
+- The producer should be initialized during the application's startup sequence (e.g., using FastAPI's 'on_startup' event).
+- The producer configuration (bootstrap servers, security, etc.) must be sourced from the settings module.
+
+Acceptance Criteria:
+- GIVEN the correct Kafka configuration is provided WHEN the service starts THEN the Kafka producer initializes successfully without errors.
+- GIVEN the Kafka brokers are unavailable at startup WHEN the service starts THEN the producer fails to initialize, a CRITICAL error is logged, and the service shuts down.
+
+Testing Requirements:
+- Unit Tests: Test the producer initialization logic with mocked configurations.
+- Integration Tests: Test that the service can successfully connect to a real or embedded Kafka cluster at startup.
+- Edge Cases: N/A
+
+Refer:
+- SDD Section 6.1: x35 Core Libraries
+- SDD Section 7.1: Kafka Configuration
+
+Dependencies:
+- II-3: Implement Configuration Management with x35-settings",8,1,II-8
+Story,Implement Invoice Publishing Logic to Kafka,To Do,"As a Developer, I want to publish each individual invoice to the 'x35-invoice-events' Kafka topic so that downstream services can process them.
+
+- Create a function that takes a list of invoice XML strings.
+- The function should loop through the list.
+- For each invoice, it must create a Kafka message where the body is the raw invoice XML string.
+- It must add a 'trace_id' to the headers of each message.
+- It will use the producer client to publish the message to the configured topic.
+
+Acceptance Criteria:
+- GIVEN a list of three invoice XML strings WHEN the publishing logic is executed THEN three separate messages are published to the 'x35-invoice-events' topic.
+- GIVEN a message is published WHEN it is inspected THEN its body contains the correct raw XML and its headers contain a 'trace_id'.
+- GIVEN publishing a single message fails WHEN the event occurs THEN an error is logged, a metric is incremented, and the service attempts to continue with the next message.
+
+Testing Requirements:
+- Unit Tests: Mock the Kafka producer to verify that the publish method is called with the correct topic, body, and headers for each invoice in a list.
+- Integration Tests: N/A
+- Edge Cases: Test with an empty list of invoices to ensure no messages are published.
+
+Refer:
+- SDD Section 5.3: Kafka Message Schema
+- SDD Section 8.1: System Errors (Kafka Unavailability)
+
+Dependencies:
+- II-7: Implement XML Response Parsing Logic
+- II-8: Implement Kafka Producer Client Setup",9,1,II-9
+Story,Implement Structured JSON Logging,To Do,"As a Developer, I want to integrate structured JSON logging throughout the service so that all operational events are captured in a machine-readable format for monitoring and alerting.
+
+- Use 'x35-json-logging' to configure the root logger.
+- Ensure every log entry includes the current 'trace_id'.
+- Log all key events specified in the SDD, including: service start/end, API calls, API responses (with payload at DEBUG level), 'No Invoices Found' events, each invoice publication, and a final summary.
+- Use appropriate log levels (INFO, DEBUG, ERROR, CRITICAL) for each event.
+
+Acceptance Criteria:
+- GIVEN the service completes a run where 15 invoices were published WHEN the logs are inspected THEN there is an INFO log with the message 'Successfully published 15 invoices'.
+- GIVEN an API call fails with a connection error WHEN the logs are inspected THEN there is an ERROR or CRITICAL log containing the exception details and a stack trace.
+- GIVEN any log entry is inspected WHEN it is examined THEN it is a valid JSON object containing a 'message', 'severity', and 'trace_id'.
+
+Testing Requirements:
+- Unit Tests: Test that specific functions generate logs with the expected messages and severity levels.
+- Integration Tests: N/A
+- Edge Cases: N/A
+
+Refer:
+- SDD Section 9.1: Logging
+
+Dependencies:
+- II-4: Implement Main Application Logic and Scheduled Entrypoint",10,1,II-10
+Story,Implement Prometheus Metrics Endpoint,To Do,"As a Developer, I want to implement a '/metrics' endpoint and all specified Prometheus metrics so that the service's performance and health can be monitored and alerted on.
+
+- Use 'x35-fastapi' to expose the '/metrics' endpoint.
+- Implement the specified Counter metrics: 'invoices_fetched_total', 'invoices_published_total', 'bamboorose_api_requests_total', 'kafka_produce_failures_total'.
+- Implement the specified Histogram metric: 'bamboorose_api_request_duration_seconds'.
+- Ensure metrics are incremented at the correct points in the code.
+
+Acceptance Criteria:
+- GIVEN the service is running WHEN a GET request is made to '/metrics' THEN the endpoint returns a 200 OK response with the metrics in Prometheus format.
+- GIVEN the service successfully fetches a batch of 10 invoices and publishes all of them WHEN the metrics are scraped THEN the 'invoices_fetched_total' and 'invoices_published_total' counters are both incremented by 10.
+- GIVEN an API call fails once before succeeding WHEN the metrics are scraped THEN the 'bamboorose_api_requests_total' counter with label 'outcome=failure' is 1 and the counter with 'outcome=success' is 1.
+
+Testing Requirements:
+- Unit Tests: Test that the metric objects are correctly incremented by the functions that are supposed to trigger them.
+- Integration Tests: Scrape the '/metrics' endpoint during an end-to-end test and verify that the values change as expected.
+- Edge Cases: N/A
+
+Refer:
+- SDD Section 9.2: Metrics
+
+Dependencies:
+- II-4: Implement Main Application Logic and Scheduled Entrypoint",11,1,II-11
+Story,Implement Distributed Tracing,To Do,"As a Developer, I want to ensure a 'trace_id' is consistently propagated through the service's execution path so that an entire transaction can be traced from start to finish.
+
+- A unique 'trace_id' must be generated at the beginning of each scheduled run.
+- This 'trace_id' must be passed to all functions.
+- The 'trace_id' must be included in all structured log messages.
+- The 'trace_id' must be added as a header to every Kafka message published by the service.
+
+Acceptance Criteria:
+- GIVEN a single scheduled run processes multiple invoices WHEN the logs for that run are inspected THEN all logs contain the exact same 'trace_id'.
+- GIVEN a message is published to Kafka by the service WHEN the message headers are inspected THEN a 'trace_id' header is present with the correct value for that run.
+
+Testing Requirements:
+- Unit Tests: Test that functions correctly pass the 'trace_id' to sub-functions and loggers.
+- Integration Tests: In an end-to-end test, capture the logs and the outbound Kafka message to verify that the 'trace_id' is consistent across both.
+- Edge Cases: N/A
+
+Refer:
+- SDD Section 9.3: Tracing
+
+Dependencies:
+- II-9: Implement Invoice Publishing Logic to Kafka
+- II-10: Implement Structured JSON Logging",12,1,II-12

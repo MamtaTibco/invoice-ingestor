@@ -1,0 +1,33 @@
+name: Test, Build and Deploy Docker Image
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'src/**'
+      - '.github/workflows/**'
+      - 'requirements*.txt'
+      - 'tests/integration/**'
+      - 'tests/unit/**'
+  push:
+    branches:
+      - main
+    paths:
+      - 'src/**'
+      - '.github/workflows/**'
+      - 'requirements*.txt'
+# Schedule block is commented to avoid running scheduled builds on this template repo
+# Uncomment it to enable scheduled builds in your service repo
+#  schedule:
+#    - cron: '0 6 * * 0' # Every Sunday at 6AM UTC(1AM EST/2AM EDT)
+
+jobs:
+  call-reusable-workflow:
+    uses: urbn/x35-actions/.github/workflows/reusable-docker-build.yml@wf-reusable-docker-build-0013
+    with:
+      prod_build: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    secrets:
+      SERVICE_ACCOUNT: ${{ secrets.SERVICE_ACCOUNT }}
+      WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
+      SLACK_WEBHOOK_URL: ${{ github.event_name == 'schedule' && secrets.SLACK_WEBHOOK_SCHEDULE_BUILD_URL || secrets.SLACK_WEBHOOK_REGULAR_BUILD_URL }}

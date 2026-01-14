@@ -1,0 +1,14 @@
+requests==2.32.3  # For HTTP interactions with Kafka REST Proxy
+#urbn-confluent-methods==1.0.18  # For Kafka Producer and Consumer
+google-auth==2.37.0  # For authentication with Google services
+google-auth-oauthlib==1.2.1  # For OAuth2 workflow (if needed in future)
+google-auth-httplib2==0.2.0  # For HTTP transport with Google Auth
+httpx==0.28.1  # For async HTTP client with retry capabilities
+#x35-json-logging==0.1.6
+#x35-fastapi==1.0.5
+#lookupcache==0.1.5
+xmltodict==1.0.2
+respx==0.22.0 # To mock HTTPX requests in tests
+lxml==6.0.2 # For XML Validation against XSD schemas
+backoff==2.2.1 # For retrying HTTP requests with exponential backoff
+#x35-constants==0.1.4

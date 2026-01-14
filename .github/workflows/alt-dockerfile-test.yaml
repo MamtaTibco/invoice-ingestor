@@ -1,0 +1,17 @@
+name: Build and Deploy Docker Image
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'tests/docker-build/alt.Dockerfile'
+jobs:
+  call-reusable-workflow:
+    uses: urbn/x35-actions/.github/workflows/reusable-docker-build.yml@wf-reusable-docker-build-0010
+    with:
+      dockerfile: 'tests/docker-build/alt.Dockerfile'
+      prod_build: false
+    secrets:
+      SERVICE_ACCOUNT: ${{ secrets.SERVICE_ACCOUNT }}
+      WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
